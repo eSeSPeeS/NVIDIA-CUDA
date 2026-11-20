@@ -357,3 +357,68 @@ void zad2_4_2(){
       cudaStreamDestroy(copy_stream);
     }
 }
+
+void zad3_2_2()
+{
+    __global__ void symmetry_check_kernel(dli::temperature_grid_f temp, int row) {
+      int column = 0;
+    
+      if (abs(temp(row, column) - temp(temp.extent(0) - 1 - row, column)) > 0.1) {
+        printf("Error: asymmetry in %d / %d\n", column, temp.extent(1));
+      }
+    }
+    
+    void symmetry_check(dli::temperature_grid_f temp, cudaStream_t stream) {
+      int target_row = 0;
+      symmetry_check_kernel<<<1, 1, 0, stream>>>(temp, target_row);
+    }    
+}
+
+void zad3_2_3()
+{
+    __global__ void symmetry_check_kernel(dli::temperature_grid_f temp, int row) {
+      int column = blockIdx.x * blockDim.x + threadIdx.x;
+    
+      if (abs(temp(row, column) - temp(temp.extent(0) - 1 - row, column)) > 0.1) {
+        printf("Error: asymmetry in %d / %d\n", column, temp.extent(1));
+      }
+    }
+    
+    void symmetry_check(dli::temperature_grid_f temp, cudaStream_t stream) {
+      int width = temp.extent(1);
+      int block_size = 1024;
+      int grid_size = cuda::ceil_div(width, block_size);
+    
+      int target_row = 0;
+      symmetry_check_kernel<<<grid_size, block_size, 0, stream>>>(temp, target_row);
+    }
+
+}
+
+void zad3_3_2()
+{
+    constexpr float bin_width = 10;
+    
+    __global__ void histogram_kernel(cuda::std::span<float> temperatures, 
+                                     cuda::std::span<int> histogram)
+    {
+      int cell = blockIdx.x * blockDim.x + threadIdx.x;
+      if (cell < temperatures.size()) {
+        int bin = static_cast<int>(temperatures[cell] / bin_width);
+    
+          cuda::std::atomic_ref<int> ref(histogram[bin]);
+          ref.fetch_add(1);
+      }
+    }
+    
+    
+    void histogram(cuda::std::span<float> temperatures, 
+                   cuda::std::span<int> histogram,
+                   cudaStream_t stream)
+    {
+      int block_size = 256;
+      int grid_size = cuda::ceil_div(temperatures.size(), block_size);
+      histogram_kernel<<<grid_size, block_size, 0, stream>>>(
+        temperatures, histogram);
+    }
+}
