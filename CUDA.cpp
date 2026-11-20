@@ -422,3 +422,115 @@ void zad3_3_2()
         temperatures, histogram);
     }
 }
+
+void zad3_4_2()
+{
+    constexpr float bin_width = 10;
+    
+    __global__ void histogram_kernel(cuda::std::span<float> temperatures,
+                                     cuda::std::span<int> block_histograms,
+                                     cuda::std::span<int> histogram) {
+      cuda::std::span<int> block_histogram =
+          block_histograms.subspan(blockIdx.x * histogram.size(), histogram.size());
+    
+      int cell = blockIdx.x * blockDim.x + threadIdx.x;
+      int bin = static_cast<int>(temperatures[cell] / bin_width);
+    
+      cuda::atomic_ref<int, cuda::thread_scope_block> block_ref(
+          block_histogram[bin]);
+      block_ref.fetch_add(1);
+      __syncthreads();
+    
+      if (threadIdx.x < histogram.size()) {
+        cuda::atomic_ref<int, cuda::thread_scope_device> ref(
+            histogram[threadIdx.x]);
+        ref.fetch_add(block_histogram[threadIdx.x]);
+      }
+    }
+    
+    void histogram(cuda::std::span<float> temperatures,
+                   cuda::std::span<int> block_histograms,
+                   cuda::std::span<int> histogram, cudaStream_t stream) {
+      int block_size = 256;
+      int grid_size = cuda::ceil_div(temperatures.size(), block_size);
+      histogram_kernel<<<grid_size, block_size, 0, stream>>>(
+          temperatures, block_histograms, histogram);
+    }
+}
+
+void zad3_5_2()
+{
+    
+    __global__ void histogram_kernel(cuda::std::span<float> temperatures,
+                                     cuda::std::span<int> histogram) {
+      __shared__ int block_histogram[10];
+    
+      if (threadIdx.x < 10) {
+        block_histogram[threadIdx.x] = 0;
+      }
+      __syncthreads();
+    
+      int cell = blockIdx.x * blockDim.x + threadIdx.x;
+      int bin = static_cast<int>(temperatures[cell] / 10);
+    
+      cuda::atomic_ref<int, cuda::thread_scope_block> block_ref(
+          block_histogram[bin]);
+      block_ref.fetch_add(1);
+      __syncthreads();
+    
+      if (threadIdx.x < 10) {
+        cuda::atomic_ref<int, cuda::thread_scope_device> ref(
+            histogram[threadIdx.x]);
+        ref.fetch_add(block_histogram[threadIdx.x]);
+      }
+    }
+    
+    void histogram(cuda::std::span<float> temperatures,
+                   cuda::std::span<int> block_histograms,
+                   cuda::std::span<int> histogram, cudaStream_t stream) {
+      int block_size = 256;
+      int grid_size = cuda::ceil_div(temperatures.size(), block_size);
+      histogram_kernel<<<grid_size, block_size, 0, stream>>>(temperatures,
+                                                             histogram);
+    }
+
+}
+
+void zad6_1_2()
+{
+    
+    constexpr int block_size = 256;
+    constexpr int items_per_thread = 1;
+    constexpr int num_bins = 10;
+    constexpr float bin_width = 10;
+    
+    __global__ void histogram_kernel(cuda::std::span<float> temperatures,
+                                     cuda::std::span<int> histogram) {
+      __shared__ int block_histogram[num_bins];
+    
+      int cell = blockIdx.x * blockDim.x + threadIdx.x;
+      int bins[items_per_thread] = {
+          static_cast<int>(temperatures[cell] / bin_width)};
+    
+      using histogram_t =
+          cub::BlockHistogram<int, block_size, items_per_thread, num_bins,
+                              cub::BlockHistogramAlgorithm::BLOCK_HISTO_ATOMIC>;
+      __shared__ typename histogram_t::TempStorage temp_storage;
+      histogram_t(temp_storage).Histogram(bins, block_histogram);
+    
+      __syncthreads();
+      if (threadIdx.x < num_bins) {
+        cuda::atomic_ref<int, cuda::thread_scope_device> ref(
+            histogram[threadIdx.x]);
+        ref.fetch_add(block_histogram[threadIdx.x]);
+      }
+    }
+    
+    void histogram(cuda::std::span<float> temperatures,
+                   cuda::std::span<int> histogram, cudaStream_t stream) {
+      int grid_size = cuda::ceil_div(temperatures.size(), block_size);
+      histogram_kernel<<<grid_size, block_size, 0, stream>>>(temperatures,
+                                                             histogram);
+    }
+
+}
